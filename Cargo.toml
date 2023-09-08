@@ -24,7 +24,7 @@ halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "comm
 poseidon = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "community-edition" }
 # Axiom Evm wrapper 
 # These are just for making proving executables, if you are just building a library you don't need them as dependencies in your project
-axiom-eth = { git = "https://github.com/axiom-crypto/axiom-eth.git", branch = "community-edition", default-features = false, features = ["halo2-axiom", "aggregation", "evm", "clap"] }
+axiom-eth = { git = "https://github.com/novus677/axiom-eth.git", branch = "main", default-features = false, features = ["halo2-axiom", "aggregation", "evm", "clap"] }
 snark-verifier-sdk = { git = "https://github.com/axiom-crypto/snark-verifier.git", branch = "community-edition", default-features = false, features = ["loader_halo2"] }
 
 [dev-dependencies]
