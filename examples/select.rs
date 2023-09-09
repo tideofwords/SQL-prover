@@ -12,17 +12,177 @@ use halo2_scaffold::scaffold::run;
 use poseidon::PoseidonChip;
 use serde::{Deserialize, Serialize};
 
-// these parameters are ad hoc and need to be checked
+// standard parameters for Poseidon
 const T: usize = 3;
 const RATE: usize = 2;
 const R_F: usize = 8;
-const R_P: usize = 57;
+const R_P: usize = 56;
 
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CircuitInput {
     pub x: [String; 10], // field element, but easier to deserialize as a string
     pub sel: [String; 10],
+}
+
+pub trait Hashable {
+    type F: ScalarField;
+
+    fn fields(&self) -> Vec<AssignedValue<Self::F>>;
+}
+
+
+#[derive(Clone, Debug)]
+pub struct TableRow<F: ScalarField> {
+    fields: Vec<AssignedValue<F>>,
+    max_fields_bits: usize,
+}
+
+/* 
+impl Hashable for TableRow<F: ScalarField> {
+    type F = F;
+    fn fields(&self) -> Vec<AssignedValue<F>> {
+        self.fields
+    }
+}
+
+pub trait Test {
+    fn print(&self) -> ();
+}
+
+impl Test for TableRow<F: ScalarField> {
+    fn print(&self) -> () {
+        println!("testy testy");
+    }
+}
+*/
+
+
+#[derive(Clone, Debug)]
+pub struct TableHead<F: ScalarField> {
+    names: Vec<AssignedValue<F>>,
+    max_fields_bits: usize,
+}
+
+/* 
+
+impl Hashable<F> for TableHead<F: ScalarField> {
+    fn fields(&self) -> Vec<AssignedValue<F>> {
+        self.names
+    }
+}
+*/
+
+
+#[derive(Clone, Debug)]
+pub struct Table<F: ScalarField> {
+    head: TableHead<F>,
+    rows: Vec<TableRow<F>>,
+    max_rows_bits: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct MerkleTree<F: ScalarField> {
+    nodes: Vec<AssignedValue<F>>,
+    // nodes[i] has children nodes[2*i + 1] and nodes[2*i + 2]
+    depth: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MerkleTestInput {
+    pub head: [String; 3],
+    pub rows: [[String; 3]; 6],
+    pub max_fields_bits: usize,
+    pub max_rows_bits: usize,
+}
+
+fn hash_row<F: ScalarField>(
+    ctx: &mut Context<F>,
+    row: TableRow<F>,
+) -> AssignedValue<F> {
+    let gate = GateChip::<F>::default();
+    let mut poseidon = PoseidonChip::<F, T, RATE>::new(ctx, R_F, R_P).unwrap();
+    poseidon.update(&row.fields);
+    poseidon.squeeze(ctx, &gate).unwrap()
+}
+
+
+fn hash_head<F: ScalarField>(
+    ctx: &mut Context<F>,
+    head: TableHead<F>,
+) -> AssignedValue<F> {
+    let gate = GateChip::<F>::default();
+    let mut poseidon = PoseidonChip::<F, T, RATE>::new(ctx, R_F, R_P).unwrap();
+    poseidon.update(&head.names);
+    poseidon.squeeze(ctx, &gate).unwrap()
+}
+
+
+fn hash_table<F: ScalarField>(
+    ctx: &mut Context<F>,
+    table: Table<F>,
+) -> AssignedValue<F> {
+    let gate = GateChip::<F>::default();
+    let mut poseidon = PoseidonChip::<F, T, RATE>::new(ctx, R_F, R_P).unwrap();
+    poseidon.update(&table.head.names);
+    for row in table.rows {
+        poseidon.update(&row.fields);
+    }
+    poseidon.squeeze(ctx, &gate).unwrap()
+}
+
+fn hash_two<F: ScalarField>(
+    ctx: &mut Context<F>,
+    a: &AssignedValue<F>,
+    b: &AssignedValue<F>,
+) -> AssignedValue<F> {
+    let gate = GateChip::<F>::default();
+    let mut poseidon = PoseidonChip::<F, T, RATE>::new(ctx, R_F, R_P).unwrap();
+    poseidon.update(&[*a, *b]);
+    poseidon.squeeze(ctx, &gate).unwrap()
+}
+
+fn merkelize<F: ScalarField>(
+    ctx: &mut Context<F>,
+    table: Table<F>,
+) -> MerkleTree<F> {
+    // table is required to have (2^k - 1) rows,
+    // some of which can be 0 (i.e. null)
+
+    // the output Merkle tree has depth k+1
+
+    let mut tree_layers: Vec<Vec<AssignedValue<F>>> = Vec::new();
+    let depth = table.max_rows_bits + 1;
+    for i in 0..depth {
+        tree_layers.push(Vec::new());
+    }
+
+    assert!(table.rows.len() <= (1 << table.max_rows_bits) - 1);
+
+    tree_layers[0].push(hash_head(ctx, table.head));
+    for row in table.rows {
+        tree_layers[0].push(hash_row(ctx, row));
+    }
+
+    for _ in tree_layers[0].len()..(1 << table.max_rows_bits) {
+        tree_layers[0].push(ctx.load_zero());
+    }
+
+    for i in 1..depth {
+        let layer_size = tree_layers[i-1].len();
+        for j in 0..(layer_size / 2) {
+            let next_item = hash_two(ctx, &tree_layers[i-1][2*j], &tree_layers[i-1][2*j + 1]);
+            tree_layers[i].push(next_item);
+        }
+    }
+
+    let mut nodes: Vec<AssignedValue<F>> = Vec::new();
+    // rearrange tree_layers into Merkle tree -- or maybe just keep this order!?
+    for i in (0..depth).rev() {
+        nodes.extend(&tree_layers[i]);
+    }
+
+    MerkleTree {nodes, depth}
 }
 
 fn select<F: ScalarField>(
@@ -178,10 +338,49 @@ fn select<F: ScalarField>(
 
 }
 
+fn strings_to_table<F: ScalarField>(
+    ctx: &mut Context<F>,
+    input: MerkleTestInput,
+) -> Table<F> {
+    let max_fields_bits = input.max_fields_bits;
+    let max_rows_bits = input.max_rows_bits;
+    let head = input.head.map(|s: String| ctx.load_witness(F::from_str_vartime(&s).unwrap()));
+    let head = TableHead {
+        names: head.to_vec(),
+        max_fields_bits,
+    };
+    let mut rows: Vec<TableRow<F>> = Vec::new();
+    for input_row in input.rows {
+        let row = input_row.map(|s: String| ctx.load_witness(F::from_str_vartime(&s).unwrap()));
+        rows.push(TableRow {
+            fields: row.to_vec(),
+            max_fields_bits,
+        });
+    }
+    Table {
+        head,
+        rows,
+        max_rows_bits,
+    }
+}
+
+fn merkle_wrapper<F: ScalarField>(
+    ctx: &mut Context<F>,
+    input: MerkleTestInput,
+    make_public: &mut Vec<AssignedValue<F>>,
+) {
+    // Convert MerkleTestInput into Table
+    let table = strings_to_table(ctx, input);
+
+    // Merkelize it
+    let tree = merkelize(ctx, table);
+
+}
+
 fn main() {
     env_logger::init();
 
     let args = Cli::parse();
-    run(select, args);
+    run(merkle_wrapper, args);
 }
 
