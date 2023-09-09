@@ -7,6 +7,8 @@ class Config:
 
 def generate_circuit(config):
     lines = []
+    lines.append(f"const NUM_COLS: usize = {config.num_cols};")
+    lines.append("#[derive(Clone, Debug, Serialize, Deserialize)]")
     lines.append("pub struct CircuitInput {")
-    lines.append(f"\tpub arr: [Vec<u64>, {config.num_cols}],")
+    lines.append("\tpub db: [Vec<u64>; NUM_COLS],")
     lines.append("{}")

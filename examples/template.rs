@@ -13,38 +13,45 @@ use halo2_scaffold::scaffold::run;
 use serde::{Deserialize, Serialize};
 use std::env::var;
 
+const NUM_COLS: usize = 2;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CircuitInput {
-    pub arr: Vec<String>,
-    pub val: String,
+    pub db: [Vec<u64>; NUM_COLS],
 }
 
-fn less_than<F: ScalarField>(
+fn select_indices<F: ScalarField>(
     ctx: &mut Context<F>,
     input: CircuitInput,
     make_public: &mut Vec<AssignedValue<F>>,
 ) {
     let lookup_bits =
         var("LOOKUP_BITS").unwrap_or_else(|_| panic!("LOOKUP_BITS not set")).parse().unwrap();
-    let arr = ctx.assign_witnesses(input.arr.iter().map(|b| F::from_str_vartime(b).unwrap()));
-    let val = ctx.load_witness(F::from_str_vartime(&input.val).unwrap());
+    let db: Vec<Vec<AssignedValue<F>>> = input
+        .db
+        .into_iter()
+        .map(|col| ctx.assign_witnesses(col.into_iter().map(|x| F::from(x))))
+        .collect();
 
     let range = RangeChip::default(lookup_bits);
+
+    let val1 = ctx.load_constant(F::from(25));
+    let ind1: Vec<AssignedValue<F>> =
+        db[0].iter().map(|&x| range.is_less_than(ctx, x, val1, 10)).collect();
+
+    let val2 = ctx.load_constant(F::from(3));
+    let ind2: Vec<AssignedValue<F>> =
+        db[1].iter().map(|&x| range.gate().is_equal(ctx, x, val2)).collect();
+
     let out: Vec<AssignedValue<F>> =
-        arr.iter().map(|&x| range.is_less_than(ctx, x, val, 10)).collect();
+        ind1.iter().zip(ind2).map(|(&x, y)| range.gate().and(ctx, x, y)).collect();
 
-    make_public.extend(&arr);
-    make_public.push(val);
     make_public.extend(&out);
-
-    println!("out: {:?}", out);
+    println!("out: {:?}", out.iter().map(|x| *x.value()).collect::<Vec<F>>());
 }
 
 fn main() {
     env_logger::init();
-
     let args = Cli::parse();
-
-    // run different zk commands based on the command line arguments
-    run(less_than, args);
+    run(select_indices, args);
 }
