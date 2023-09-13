@@ -1,3 +1,4 @@
+use axiom_eth;
 use clap::Parser;
 use halo2_base::gates::{GateChip, GateInstructions};
 use halo2_base::safe_types::{RangeChip, RangeInstructions};
