@@ -38,6 +38,7 @@ fn some_algorithm_in_zk<F: ScalarField>(
     // ===== way 1 =====
     // now we can perform arithmetic operations almost like a normal program using halo2-lib API functions
     // square x
+    println!("about to MUL gate");
     let x_sq = gate.mul(ctx, x, x);
 
     // x^2 + 72
@@ -64,6 +65,15 @@ fn some_algorithm_in_zk<F: ScalarField>(
     println!("x: {:?}", x.value());
     println!("val_assigned: {:?}", out.value());
     assert_eq!(*x.value() * x.value() + c, *out.value());
+}
+
+// test out challenge API
+fn challenge<F: ScalarField>(
+    ctx: &mut Context<F>,
+    input: CircuitInput,
+    make_public: &mut Vec<AssignedValue<F>>,
+) {
+
 }
 
 fn main() {

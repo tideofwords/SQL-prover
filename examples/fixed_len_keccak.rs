@@ -62,7 +62,9 @@ fn compute_fixed_len_keccak<F: Field>(
     // For Keccak, this function is empty because we fill it in for you behind the scenes. ONLY in the SecondPhase is the keccak computation above actually constrained.
     #[allow(clippy::let_and_return)]
     let callback =
-        |_ctx_gate: &mut Context<F>, _ctx_rlc: &mut Context<F>, _eth_chip: &EthChip<F>| {};
+        |_ctx_gate: &mut Context<F>, _ctx_rlc: &mut Context<F>, _eth_chip: &EthChip<F>| {
+            println!("IN CALLBACK");
+        };
 
     callback
 }
